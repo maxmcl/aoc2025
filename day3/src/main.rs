@@ -1,53 +1,66 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader, Lines};
 
-type Joltage = u32;
+type Joltage = u64;
 #[derive(Debug)]
 struct Bank {
     batteries: Vec<Joltage>,
 }
 
-struct State {
-    best: Joltage,
-    first: Joltage,
-    second: Joltage,
-    handler: Handler,
-}
+type BankPower = [Joltage; 12];
 
-type Handler = fn(state: &mut State, value: Joltage);
-
-impl State {
-    // Totally unecessary state machine that runs once, but whatever
-    fn handle_first(&mut self, value: Joltage) {
-        self.first = value;
-        self.handler = State::handle_second;
-    }
-
-    fn handle_second(&mut self, value: Joltage) {
-        if value > self.second {
-            self.second = value;
-            self.best = 10 * self.first + self.second;
-        }
-        if value > self.first {
-            self.first = value;
-            self.second = Joltage::MIN;
-        }
-    }
+fn compute_power(bank_power: &BankPower) -> Joltage {
+    bank_power
+        .iter()
+        .rev()
+        .copied()
+        .enumerate()
+        .map(|(p, value)| value * (10 as Joltage).pow(p as u32))
+        .sum()
 }
 
 impl Bank {
+    fn recurse(values: &[Joltage], mut bank_power: BankPower, best: &mut Joltage, mut pos: usize) {
+        if values.is_empty() {
+            return;
+        }
+        let first = values[0];
+        let n1 = bank_power.len() - 1;
+        for next_pos in 0..=pos {
+            if n1 - next_pos > values.len() - 1 {
+                continue;
+            }
+            if first > bank_power[next_pos] {
+                bank_power[next_pos] = first;
+                bank_power[next_pos + 1..].fill(0);
+                if next_pos == n1 {
+                    *best = std::cmp::max(*best, compute_power(&bank_power));
+                }
+                pos = std::cmp::min(next_pos + 1, n1);
+                break;
+            }
+        }
+        Bank::recurse(&values[1..], bank_power, best, pos)
+    }
+
     fn get_largest_joltage(&self) -> Joltage {
-        let mut state = State {
-            best: Joltage::MIN,
-            first: Joltage::MIN,
-            second: Joltage::MIN,
-            handler: State::handle_first,
-        };
-        self.batteries.iter().copied().for_each(|value| {
-            (state.handler)(&mut state, value);
-        });
-        println!("{}", state.best);
-        state.best
+        // Microoptimization
+        let max = self.batteries[..self.batteries.len() - 12]
+            .iter()
+            .max()
+            .expect(">= 1 battery");
+        let pos = self
+            .batteries
+            .iter()
+            .position(|battery| battery == max)
+            .expect("1 battery matches max");
+        let mut bank_power = BankPower::default();
+        bank_power[0] = *max;
+
+        let mut best = 0;
+        Bank::recurse(&self.batteries[pos + 1..], bank_power, &mut best, 1);
+        println!("{self:?} | {best}");
+        best
     }
 }
 
@@ -58,7 +71,7 @@ fn parse(lines: FileLines) -> impl Iterator<Item = Bank> {
         Bank {
             batteries: line
                 .chars()
-                .map(|c| c.to_digit(10).expect("battery has a valid value"))
+                .map(|c| c.to_digit(10).expect("battery has a valid value") as Joltage)
                 .collect(),
         }
     })
@@ -74,7 +87,7 @@ fn main() {
             .lines()
         )
         .map(|bank| bank.get_largest_joltage())
-        .sum::<u32>()
+        .sum::<Joltage>()
     );
 }
 
