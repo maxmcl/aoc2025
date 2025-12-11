@@ -90,21 +90,26 @@ fn main() {
             .as_str(),
     );
     let mut n = 0;
+    let mut accessible = diagram
+        .rolls
+        .iter()
+        .filter(|roll| diagram.is_accessible(roll))
+        .copied()
+        .collect::<HashSet<_>>();
     loop {
-        let accessible = diagram
-            .rolls
-            .iter()
-            .filter(|roll| diagram.is_accessible(roll))
-            .copied()
-            .collect::<Vec<_>>();
         if accessible.is_empty() {
             break;
         }
-        println!("removing {}", accessible.len());
         n += accessible.len();
-        for roll in accessible {
-            diagram.rolls.remove(&roll);
+        for roll in accessible.iter() {
+            diagram.rolls.remove(roll);
         }
+
+        accessible = accessible
+            .iter()
+            .flat_map(|coord| coord.get_neighbors())
+            .filter(|roll| diagram.rolls.contains(roll) && diagram.is_accessible(roll))
+            .collect();
     }
     println!("{}", n);
 }
