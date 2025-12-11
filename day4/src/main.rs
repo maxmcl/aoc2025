@@ -77,27 +77,36 @@ impl Diagram {
         const MIN_ROLLS: usize = 4;
         coord
             .get_neighbors()
-            .filter(|neighbor| self.is_in_bounds(&neighbor) && self.rolls.contains(&neighbor))
+            .filter(|neighbor| self.is_in_bounds(neighbor) && self.rolls.contains(neighbor))
             .count()
             < MIN_ROLLS
     }
 }
 
 fn main() {
-    let diagram = Diagram::from(
+    let mut diagram = Diagram::from(
         std::fs::read_to_string(std::env::args().nth(1).expect("filename"))
             .expect("file exists")
             .as_str(),
     );
-    dbg!(&diagram);
-    println!(
-        "{}",
-        diagram
+    let mut n = 0;
+    loop {
+        let accessible = diagram
             .rolls
             .iter()
             .filter(|roll| diagram.is_accessible(roll))
-            .count()
-    );
+            .copied()
+            .collect::<Vec<_>>();
+        if accessible.is_empty() {
+            break;
+        }
+        println!("removing {}", accessible.len());
+        n += accessible.len();
+        for roll in accessible {
+            diagram.rolls.remove(&roll);
+        }
+    }
+    println!("{}", n);
 }
 
 #[cfg(test)]
