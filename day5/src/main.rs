@@ -18,46 +18,64 @@ impl From<&str> for Range {
 }
 
 impl Range {
-    fn contains(&self, ingredient: Id) -> bool {
-        (self.start..=self.end).contains(&ingredient)
+    fn n_ingredients(&self) -> usize {
+        (self.end - self.start + 1) as usize
+    }
+
+    fn merge(&mut self, other: Range) {
+        self.start = std::cmp::min(self.start, other.start);
+        self.end = std::cmp::max(self.end, other.end);
+    }
+
+    fn has_overlap(&self, other: &Range) -> bool {
+        !(other.end < self.start || other.start > self.end)
     }
 }
 
 #[derive(Debug)]
-struct Database {
-    ranges: Vec<Range>,
-    ingredients: Vec<Id>,
-}
+struct Database(Vec<Range>);
 
 impl From<&str> for Database {
     fn from(data: &str) -> Self {
-        let (ranges, ingredients) = data
+        let (ranges, _) = data
             .split_once("\n\n")
             .expect("ranges and ingredients split by \n\n");
-        Self {
-            ranges: ranges.lines().map(Range::from).collect(),
-            ingredients: ingredients
-                .lines()
-                .map(|l| l.parse().expect("ingredient is a valid ID"))
-                .collect(),
+        Self(ranges.lines().map(Range::from).collect())
+    }
+}
+
+impl Database {
+    fn merge(mut self) -> Self {
+        self.0.sort_unstable_by_key(|range| range.start);
+        let mut new = Vec::with_capacity(self.0.len());
+        let mut iter = self.0.into_iter();
+        new.push(iter.next().expect("at least 1 range"));
+        let mut n = 0;
+        for next in iter {
+            if new[n].has_overlap(&next) {
+                new[n].merge(next);
+            } else {
+                new.push(next);
+                n += 1;
+            }
         }
+        Self(new)
     }
 }
 
 fn main() {
-    let Database {
-        ranges,
-        ingredients,
-    } = Database::from(
+    let database = Database::from(
         std::fs::read_to_string(std::env::args().nth(1).expect("filename"))
             .expect("file exists")
             .as_str(),
-    );
+    )
+    .merge();
     println!(
         "{}",
-        ingredients
+        database
+            .0
             .into_iter()
-            .filter(|ingredient| ranges.iter().any(|range| range.contains(*ingredient)))
-            .count()
+            .map(|range| range.n_ingredients())
+            .sum::<usize>()
     );
 }
