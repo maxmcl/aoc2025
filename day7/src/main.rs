@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 type Pos = isize;
 
@@ -73,23 +73,26 @@ impl Manifold {
         })
     }
 
-    fn count_splits(&self) -> usize {
-        let mut to_visit = vec![self.start];
-        let mut visited = HashSet::<Coord>::default();
-        let mut count = 0;
-        while let Some(coord) = to_visit.pop() {
-            if let Some(splitter) = self.find_splitter_below(coord) {
-                if !visited.insert(splitter) {
-                    continue;
-                }
-                count += 1;
-                for split in splitter.split() {
-                    to_visit.push(split);
-                }
-            }
+    fn _count_splits(&self, coord: Coord, cache: &mut HashMap<Coord, usize>) -> usize {
+        if let Some(count) = cache.get(&coord) {
+            return *count;
         }
 
+        let count = if let Some(splitter) = self.find_splitter_below(coord) {
+            1 + splitter
+                .split()
+                .map(|split| self._count_splits(split, cache))
+                .sum::<usize>()
+        } else {
+            0
+        };
+        cache.insert(coord, count);
         count
+    }
+
+    fn count_splits(&self) -> usize {
+        let mut cache = HashMap::<Coord, usize>::default();
+        1 + self._count_splits(self.start, &mut cache)
     }
 }
 
