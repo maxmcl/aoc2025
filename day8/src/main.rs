@@ -1,5 +1,3 @@
-use std::collections::{HashMap, HashSet};
-
 type Pos = isize;
 #[derive(Debug)]
 struct Coord {
@@ -40,31 +38,6 @@ impl From<&str> for JunctionBoxes {
     }
 }
 
-type BoxId = usize;
-
-fn merge(
-    circuits_map: &mut HashMap<CircuitId, HashSet<BoxId>>,
-    boxes_map: &mut HashMap<BoxId, CircuitId>,
-    circuit_id1: CircuitId,
-    circuit_id2: CircuitId,
-    box_id2: BoxId,
-) -> CircuitId {
-    if circuit_id1 != circuit_id2 {
-        // Merge the 2nd circuit in the 1st
-        // TODO: merge smallest in largest
-        let mut merged_ids = unsafe { circuits_map.remove(&circuit_id2).unwrap_unchecked() };
-        // box_id2 is temporarily not in boxes_map, skip it
-        merged_ids.remove(&box_id2);
-        // replace ids pointing to circuit_id2 by circuit_id1
-        merged_ids.iter().for_each(|id| {
-            *unsafe { boxes_map.get_mut(id).unwrap_unchecked() } = circuit_id1;
-        });
-        unsafe { circuits_map.get_mut(&circuit_id1).unwrap_unchecked() }
-            .extend(merged_ids.into_iter().chain(std::iter::once(box_id2)));
-    }
-    circuit_id1
-}
-
 fn main() {
     let n_connections = std::env::args()
         .nth(2)
@@ -79,55 +52,51 @@ fn main() {
 
     let n = boxes.len();
     let mut id_pairs = Vec::with_capacity((1..n).sum());
+    let mut circuit_to_boxes = Vec::with_capacity(n);
+    let mut box_to_circuits = Vec::with_capacity(n);
+    circuit_to_boxes.push(vec![0]);
+    box_to_circuits.push(CircuitId(0));
     for i1 in 0..n - 1 {
         for i2 in i1 + 1..n {
             id_pairs.push((i1, i2, boxes[i1].squared_distance(&boxes[i2])));
+            circuit_to_boxes.push(vec![i2]);
+            box_to_circuits.push(CircuitId(i2));
         }
     }
     id_pairs.sort_unstable_by_key(|(_, _, distance)| *distance);
     id_pairs.truncate(n_connections);
 
-    // TODO: Vec<HashSet> and Vec<CircuitId> instead or Vec<Vec> (matrix)
-    let mut circuits_map = HashMap::<CircuitId, HashSet<BoxId>>::default();
-    let mut boxes_map = HashMap::<BoxId, CircuitId>::default();
-    let mut curr_circuit_id = CircuitId(0);
-
     for (box_id1, box_id2, _) in id_pairs {
-        println!("{box_id1} & {box_id2}");
-        let circuit_id = match (boxes_map.remove(&box_id1), boxes_map.remove(&box_id2)) {
-            (Some(circuit_id1), Some(circuit_id2)) => merge(
-                &mut circuits_map,
-                &mut boxes_map,
-                circuit_id1,
-                circuit_id2,
-                box_id2,
-            ),
-            (Some(circuit_id), None) => {
-                // Insert box ID 2 in box ID 1's circuit
-                unsafe { circuits_map.get_mut(&circuit_id).unwrap_unchecked() }.insert(box_id2);
-                circuit_id
+        let (circuit_id1, circuit_id2) = (box_to_circuits[box_id1], box_to_circuits[box_id2]);
+        if circuit_id1 == circuit_id2 {
+            continue;
+        }
+
+        // Merge the circuits
+        let (ids, circuit_id) = match circuit_to_boxes[circuit_id1.0]
+            .len()
+            .cmp(&circuit_to_boxes[circuit_id2.0].len())
+        {
+            std::cmp::Ordering::Less => {
+                // merge circuit 1 into circuit 2
+                let mut temp = vec![];
+                std::mem::swap(&mut temp, &mut circuit_to_boxes[circuit_id1.0]);
+                (temp, circuit_id2)
             }
-            (None, Some(circuit_id)) => {
-                // Insert box ID 1 in box ID 2's circuit
-                unsafe { circuits_map.get_mut(&circuit_id).unwrap_unchecked() }.insert(box_id1);
-                circuit_id
-            }
-            (None, None) => {
-                // Both boxes don't belong to any circuit, create one
-                let id = curr_circuit_id;
-                let ids = circuits_map.entry(id).or_default();
-                curr_circuit_id.0 += 1;
-                ids.insert(box_id1);
-                ids.insert(box_id2);
-                id
+            _ => {
+                // merge circuit 2 into circuit 1
+                let mut temp = vec![];
+                std::mem::swap(&mut temp, &mut circuit_to_boxes[circuit_id2.0]);
+                (temp, circuit_id1)
             }
         };
-        boxes_map.insert(box_id1, circuit_id);
-        boxes_map.insert(box_id2, circuit_id);
+
+        ids.iter().for_each(|id| box_to_circuits[*id] = circuit_id);
+        circuit_to_boxes[circuit_id.0].extend(ids);
     }
 
-    let mut circuit_sizes = circuits_map
-        .into_values()
+    let mut circuit_sizes = circuit_to_boxes
+        .into_iter()
         .map(|ids| ids.len())
         .collect::<Vec<_>>();
 
@@ -136,47 +105,4 @@ fn main() {
         "{}",
         circuit_sizes.into_iter().rev().take(3).product::<usize>()
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::*;
-
-    #[test]
-    fn test_merge() {
-        let mut circuits_map = HashMap::<CircuitId, HashSet<BoxId>>::default();
-        let circuit_id1 = CircuitId(0);
-        {
-            let ids = circuits_map.entry(circuit_id1).or_default();
-            ids.insert(0);
-            ids.insert(1);
-        }
-        let circuit_id2 = CircuitId(2);
-        {
-            let ids = circuits_map.entry(circuit_id2).or_default();
-            ids.insert(2);
-            ids.insert(3);
-            ids.insert(4);
-        }
-        let mut boxes_map = HashMap::<BoxId, CircuitId>::default();
-        boxes_map.insert(0, circuit_id1);
-        boxes_map.insert(1, circuit_id1);
-        boxes_map.insert(2, circuit_id2);
-        boxes_map.insert(3, circuit_id2);
-        boxes_map.insert(4, circuit_id2);
-        merge(
-            &mut circuits_map,
-            &mut boxes_map,
-            circuit_id1,
-            circuit_id2,
-            2,
-        );
-
-        let ids = circuits_map.get(&circuit_id1);
-        assert!(ids.is_some());
-        assert!(ids.unwrap().len() == 5);
-        assert!(circuits_map.get(&circuit_id2).is_none());
-        boxes_map.get_mut(&2).map(|id| *id = circuit_id1);
-        assert!(boxes_map.values().all(|id| *id == circuit_id1));
-    }
 }
