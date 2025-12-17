@@ -39,11 +39,6 @@ impl From<&str> for JunctionBoxes {
 }
 
 fn main() {
-    let n_connections = std::env::args()
-        .nth(2)
-        .expect("n connections value")
-        .parse::<usize>()
-        .expect("valid n connections value");
     let JunctionBoxes(boxes) = JunctionBoxes::from(
         std::fs::read_to_string(std::env::args().nth(1).expect("filename"))
             .expect("file exists")
@@ -54,25 +49,36 @@ fn main() {
     let mut id_pairs = Vec::with_capacity((1..n).sum());
     let mut circuit_to_boxes = Vec::with_capacity(n);
     let mut box_to_circuits = Vec::with_capacity(n);
-    circuit_to_boxes.push(vec![0]);
-    box_to_circuits.push(CircuitId(0));
     for i1 in 0..n - 1 {
+        circuit_to_boxes.push(vec![i1]);
+        box_to_circuits.push(CircuitId(i1));
         for i2 in i1 + 1..n {
             id_pairs.push((i1, i2, boxes[i1].squared_distance(&boxes[i2])));
-            circuit_to_boxes.push(vec![i2]);
-            box_to_circuits.push(CircuitId(i2));
         }
     }
-    id_pairs.sort_unstable_by_key(|(_, _, distance)| *distance);
-    id_pairs.truncate(n_connections);
+    circuit_to_boxes.push(vec![n - 1]);
+    box_to_circuits.push(CircuitId(n - 1));
+    id_pairs.sort_unstable_by_key(|(_, _, distance)| -1 * distance);
 
-    for (box_id1, box_id2, _) in id_pairs {
+    let mut n_circuits = circuit_to_boxes.len();
+
+    loop {
+        let Some((box_id1, box_id2, _)) = id_pairs.pop() else {
+            panic!("no more ID pairs to visit and n_circuits = {n_circuits}");
+        };
         let (circuit_id1, circuit_id2) = (box_to_circuits[box_id1], box_to_circuits[box_id2]);
         if circuit_id1 == circuit_id2 {
             continue;
         }
 
         // Merge the circuits
+        n_circuits -= 1;
+
+        if n_circuits == 1 {
+            println!("1 circuit at: {:?} & {:?}", boxes[box_id1], boxes[box_id2]);
+            break;
+        }
+
         let (ids, circuit_id) = match circuit_to_boxes[circuit_id1.0]
             .len()
             .cmp(&circuit_to_boxes[circuit_id2.0].len())
@@ -94,15 +100,4 @@ fn main() {
         ids.iter().for_each(|id| box_to_circuits[*id] = circuit_id);
         circuit_to_boxes[circuit_id.0].extend(ids);
     }
-
-    let mut circuit_sizes = circuit_to_boxes
-        .into_iter()
-        .map(|ids| ids.len())
-        .collect::<Vec<_>>();
-
-    circuit_sizes.sort_unstable();
-    println!(
-        "{}",
-        circuit_sizes.into_iter().rev().take(3).product::<usize>()
-    );
 }
