@@ -2,31 +2,50 @@ use std::collections::{HashSet, VecDeque};
 
 #[derive(Debug, Default)]
 struct Machine {
-    // 0 pad left, only the bottom 10 bits are used
-    indicator_lights: u16,
-    button_wirings: Vec<u16>,
+    button_wirings: Vec<Vec<usize>>,
     joltage_reqs: Vec<u16>,
 }
 
 impl Machine {
-    fn apply_button(indicator_lights: u16, button: u16) -> u16 {
-        indicator_lights ^ button
+    fn apply_button(mut counts: Vec<u16>, button: &[usize]) -> Vec<u16> {
+        button
+            .iter()
+            .for_each(|&press_index| counts[press_index] += 1);
+        counts
     }
 
     fn solve(&self) -> usize {
-        let mut cache = HashSet::<u16>::default();
         let mut to_visit = VecDeque::default();
-        to_visit.push_front((0, 0));
-        while let Some((lights, n_presses)) = to_visit.pop_front() {
-            if lights == self.indicator_lights {
-                return n_presses;
-            }
-            for button in &self.button_wirings {
-                let next = Self::apply_button(lights, *button);
-                if !cache.insert(next) {
+        // TODO: proceed in reverse an subtract from joltage_reqs, is it faster?
+        let init_counts = vec![0; self.joltage_reqs.len()];
+        to_visit.push_front((init_counts.clone(), 0, 0));
+        // TODO: efficient hashing?
+        let mut cache = HashSet::<Vec<_>>::default();
+        cache.insert(init_counts);
+
+        while let Some((counts, index, n_presses)) = to_visit.pop_front() {
+            let next_presses = n_presses + 1;
+            for (button_ind, button) in self.button_wirings[index..].iter().enumerate() {
+                let next = Self::apply_button(counts.clone(), button);
+                if !cache.insert(next.clone()) {
                     continue;
                 }
-                to_visit.push_back((next, n_presses + 1));
+                {
+                    // Check if next is a solution or an invalid candidate
+                    let mut n_eq = 0;
+                    for (count, exp_count) in next.iter().zip(&self.joltage_reqs) {
+                        match count.cmp(exp_count) {
+                            std::cmp::Ordering::Equal => n_eq += 1,
+                            std::cmp::Ordering::Greater => continue,
+                            _ => (),
+                        }
+                    }
+                    if n_eq == self.joltage_reqs.len() {
+                        return next_presses;
+                    }
+                }
+                // Keep exploring candidate, limiting buttons from index + button_ind
+                to_visit.push_back((next, index + button_ind, next_presses));
             }
         }
 
@@ -37,25 +56,7 @@ impl Machine {
 impl From<&str> for Machine {
     fn from(line: &str) -> Self {
         let splits = line.split_whitespace().collect::<Vec<_>>();
-        let mut out = Self {
-            indicator_lights: splits
-                .first()
-                .expect("indicator lights")
-                .strip_prefix('[')
-                .expect("leading [")
-                .strip_suffix(']')
-                .expect("trailing ]")
-                .chars()
-                .enumerate()
-                .filter_map(|(ind, c)| match c {
-                    '.' => None,
-                    '#' => Some(1 << ind),
-                    _ => panic!("invalid indicator light char: {c}"),
-                })
-                .sum(),
-            ..Default::default()
-        };
-
+        let mut out = Self::default();
         splits
             .last()
             .expect("joltage requirements")
@@ -74,8 +75,8 @@ impl From<&str> for Machine {
                     .strip_suffix(')')
                     .expect("trailing )")
                     .split(',')
-                    .map(|num| 1 << num.parse::<u16>().expect("valid number"))
-                    .sum(),
+                    .map(|num| num.parse().expect("valid number"))
+                    .collect(),
             );
         }
         out
@@ -103,15 +104,4 @@ fn main() {
             .map(|machine| machine.solve())
             .sum::<usize>()
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::Machine;
-
-    #[test]
-    fn test_apply_button() {
-        assert_eq!(Machine::apply_button(0, 5), 5);
-        assert_eq!(Machine::apply_button(5, 3), 6);
-    }
 }
