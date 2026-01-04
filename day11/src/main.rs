@@ -19,11 +19,26 @@ impl<'a> From<&'a str> for Graph<'a> {
 }
 
 impl<'a> Graph<'a> {
-    fn recurse(&'a self, curr: &'a str, cache: &mut HashMap<&'a str, usize>) -> usize {
+    fn recurse(
+        &'a self,
+        curr: &'a str,
+        cache: &mut HashMap<(&'a str, bool, bool), usize>,
+        mut has_seen_dac: bool,
+        mut has_seen_fft: bool,
+    ) -> usize {
+        const DAC: &str = "dac";
+        const FFT: &str = "fft";
         const OUT: &str = "out";
+        let key = (curr, has_seen_dac, has_seen_fft);
         if curr == OUT {
-            return 1;
-        } else if let Some(count) = cache.get(curr) {
+            return usize::from(has_seen_fft && has_seen_dac);
+        } else if curr == DAC {
+            has_seen_dac = true;
+        } else if curr == FFT {
+            has_seen_fft = true;
+        }
+
+        if let Some(count) = cache.get(&key) {
             return *count;
         }
         let Some(outputs) = self.0.get(curr) else {
@@ -31,15 +46,15 @@ impl<'a> Graph<'a> {
         };
         let total = outputs
             .iter()
-            .map(|output| self.recurse(output, cache))
+            .map(|output| self.recurse(output, cache, has_seen_dac, has_seen_fft))
             .sum();
-        cache.insert(curr, total);
+        cache.insert(key, total);
         total
     }
     fn find_n_paths(&self) -> usize {
-        const YOU: &str = "you";
+        const SVR: &str = "svr";
         let mut cache = HashMap::default();
-        self.recurse(YOU, &mut cache)
+        self.recurse(SVR, &mut cache, false, false)
     }
 }
 
